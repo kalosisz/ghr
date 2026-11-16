@@ -1,0 +1,52 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: rp
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      - name: Show release-please outputs
+        run: |
+          echo "release_created=${{ steps.rp.outputs.release_created }}"
+          echo "tag_name=${{ steps.rp.outputs.tag_name }}"
+          echo "sha=${{ steps.rp.outputs.sha }}"
+
+      - name: Upload asset to draft release
+        if: ${{ steps.rp.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.rp.outputs.tag_name }}
+        run: |
+          echo "hello $TAG" > asset.txt
+          gh release upload "$TAG" asset.txt --repo "$GITHUB_REPOSITORY"
+
+      - name: Publish release
+        if: ${{ steps.rp.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.rp.outputs.tag_name }}
+        run: gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
+
+      - name: Report tag and release state
+        if: ${{ steps.rp.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.rp.outputs.tag_name }}
+          RP_SHA: ${{ steps.rp.outputs.sha }}
+        run: |
+          echo "release-please sha: $RP_SHA"
+          echo "tag points at:      $(gh api repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG --jq .object.sha)"
+          gh api repos/$GITHUB_REPOSITORY/releases/tags/$TAG --jq '{draft,immutable,target_commitish,assets:[.assets[].name]}'
